@@ -3,6 +3,7 @@ import os
 import redis
 import requests
 from dotenv import load_dotenv
+from config import DevelopmentGonfig, TestingConfig, ProductionConfig
 
 
 load_dotenv()
@@ -10,18 +11,26 @@ load_dotenv()
 
 app = Flask(__name__)
 
+env = os.getenv("ENV", "development")
+if env == "production":
+    app.config.from_object(ProductionConfig)
+elif env == "testing":
+    app.config.from_object(TestingConfig)
+else:
+    app.config.from_object(DevelopmentGonfig)
 
-REDIS_HOST = "localhost"
-REDIS_PORT = 6379
-CACHE_EXPIRATION = 43200  # Cache expires after 12 hours (in seconds)
-try:
-    redis_client = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-    redis_client.ping()
-except redis.ConnectionError:
-    raise Exception("Redis server is unavailable. Please ensure Redis is running.")
+
+redis_client = redis.StrictRedis(
+    host=app.config["Redis_Host"],
+    port=app.config["Redis_Port"],
+    decode_responses=True
+)
+
 
 API_KEY = os.getenv("WEATHER_API_KEY")
 API_URL = os.getenv("WEATHER_API_URL")
+
+
 if not API_KEY or not API_URL:
     raise Exception("API_KEY or API_URL is missing. Check your .env file.")
 
@@ -47,7 +56,7 @@ def get_weather():
         responce.raise_for_status()
         weather_data = responce.json()
         # Save data in cache
-        redis_client.setex(city, CACHE_EXPIRATION, str(weather_data))
+        redis_client.setex(city, 43200, str(weather_data))
         return jsonify({"city": city, "data": weather_data})
     except requests.exceptions.HTTPError as http_err:
         return jsonify({"error": f"HTTP error occurred: {http_err}"}), 500
@@ -55,6 +64,7 @@ def get_weather():
         return jsonify({"error": "Redis server is unavailable. Please try again later."}), 500
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True)
